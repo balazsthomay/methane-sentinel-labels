@@ -1,0 +1,33 @@
+[project]
+name = "methane-sentinel-labels"
+version = "0.1.0"
+description = "Cross-sensor methane plume label dataset generator for Sentinel-2"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "geopandas>=1.1.3",
+    "httpx>=0.28.1",
+    "numpy>=2.4.3",
+    "pyarrow>=23.0.1",
+    "pyproj>=3.7.2",
+    "pystac-client>=0.9.0",
+    "rasterio>=1.5.0",
+    "shapely>=2.1.2",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project.scripts]
+methane-sentinel-labels = "methane_sentinel_labels.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["integration: hits real external APIs (deselect with '-m not integration')"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "pytest-cov>=7.0.0",
+]
