@@ -14,6 +14,7 @@ from methane_sentinel_labels.ingest.carbon_mapper import (
     save_detections,
 )
 from methane_sentinel_labels.matching.sentinel2 import find_matches
+from methane_sentinel_labels.visualization import visualize_dataset
 
 logger = logging.getLogger(__name__)
 
@@ -178,6 +179,11 @@ def _cmd_run(args: argparse.Namespace) -> None:
     # Step D: Assemble dataset
     logger.info("=== Step D: Assembling dataset ===")
     assemble_dataset(all_records, cfg.output_dir)
+
+    # Step E: Visualize patches
+    if all_records:
+        logger.info("=== Step E: Generating visualizations ===")
+        visualize_dataset(all_records, cfg.output_dir, max_plots=10)
 
     logger.info(
         "Pipeline complete: %d detections → %d patches",
