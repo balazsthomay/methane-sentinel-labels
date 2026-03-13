@@ -42,14 +42,15 @@ def _make_stac_item(
         "eo:cloud_cover": cloud_cover,
         "grid:code": f"MGRS-{mgrs_tile}",
     }
+    # Earth Search uses descriptive asset keys, not Sentinel-2 band names
     item.assets = {
-        "B02": MagicMock(href="https://example.com/B02.tif"),
-        "B03": MagicMock(href="https://example.com/B03.tif"),
-        "B04": MagicMock(href="https://example.com/B04.tif"),
-        "B8A": MagicMock(href="https://example.com/B8A.tif"),
-        "B11": MagicMock(href="https://example.com/B11.tif"),
-        "B12": MagicMock(href="https://example.com/B12.tif"),
-        "SCL": MagicMock(href="https://example.com/SCL.tif"),
+        "blue": MagicMock(href="https://example.com/blue.tif"),
+        "green": MagicMock(href="https://example.com/green.tif"),
+        "red": MagicMock(href="https://example.com/red.tif"),
+        "nir08": MagicMock(href="https://example.com/nir08.tif"),
+        "swir16": MagicMock(href="https://example.com/swir16.tif"),
+        "swir22": MagicMock(href="https://example.com/swir22.tif"),
+        "scl": MagicMock(href="https://example.com/scl.tif"),
     }
     return item
 

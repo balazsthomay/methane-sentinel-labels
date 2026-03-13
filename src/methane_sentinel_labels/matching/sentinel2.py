@@ -10,6 +10,17 @@ from methane_sentinel_labels.models import Detection, SceneMatch
 
 logger = logging.getLogger(__name__)
 
+# Sentinel-2 band name → Earth Search STAC asset key
+_BAND_TO_ASSET: dict[str, str] = {
+    "B02": "blue",
+    "B03": "green",
+    "B04": "red",
+    "B8A": "nir08",
+    "B11": "swir16",
+    "B12": "swir22",
+    "SCL": "scl",
+}
+
 
 def find_matches(
     detections: list[Detection],
@@ -83,11 +94,12 @@ def _item_to_scene_match(
     grid_code = item.properties.get("grid:code", "")
     mgrs_tile = grid_code.replace("MGRS-", "") if grid_code else ""
 
-    # Extract band HREFs
+    # Extract band HREFs (map Sentinel-2 band names to STAC asset keys)
     band_hrefs: dict[str, str] = {}
     for band in cfg.bands:
-        if band in item.assets:
-            band_hrefs[band] = item.assets[band].href
+        asset_key = _BAND_TO_ASSET.get(band, band)
+        if asset_key in item.assets:
+            band_hrefs[band] = item.assets[asset_key].href
 
     return SceneMatch(
         detection_source_id=detection.source_id,

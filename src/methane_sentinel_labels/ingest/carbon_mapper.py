@@ -27,7 +27,9 @@ def fetch_detections(
         client = httpx.Client(timeout=30.0)
 
     try:
-        token = _authenticate(client, cfg)
+        token: str | None = None
+        if cfg.cm_email and cfg.cm_password:
+            token = _authenticate(client, cfg)
         detections = _paginate(client, cfg, token)
     finally:
         if own_client:
@@ -61,10 +63,10 @@ def _authenticate(client: httpx.Client, cfg: PipelineConfig) -> str:
 def _paginate(
     client: httpx.Client,
     cfg: PipelineConfig,
-    token: str,
+    token: str | None,
 ) -> list[Detection]:
     """Paginate through the annotated plumes endpoint."""
-    headers = {"Authorization": f"Bearer {token}"}
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
     detections: list[Detection] = []
     offset = 0
 

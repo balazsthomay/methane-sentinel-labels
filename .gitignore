@@ -15,3 +15,4 @@ SPEC.md
 # Pipeline output
 output/
 test_output/
+.env

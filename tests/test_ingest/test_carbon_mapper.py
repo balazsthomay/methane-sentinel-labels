@@ -86,7 +86,19 @@ class TestAuthenticate:
 
 
 class TestFetchDetections:
-    def test_single_page(self, page1_response: dict, token_response: dict):
+    def test_single_page_no_auth(self, page1_response: dict):
+        """Published plumes endpoint works without authentication."""
+        mock_client = MagicMock(spec=httpx.Client)
+        mock_client.get.return_value = httpx.Response(
+            200, json=page1_response, request=httpx.Request("GET", "http://test")
+        )
+        cfg = PipelineConfig()
+        detections = fetch_detections(cfg, client=mock_client)
+        assert len(detections) == 3
+        assert all(isinstance(d, Detection) for d in detections)
+        mock_client.post.assert_not_called()
+
+    def test_single_page_with_auth(self, page1_response: dict, token_response: dict):
         mock_client = MagicMock(spec=httpx.Client)
         mock_client.post.return_value = httpx.Response(
             200, json=token_response, request=httpx.Request("POST", "http://test")
@@ -97,7 +109,7 @@ class TestFetchDetections:
         cfg = PipelineConfig(cm_email="test@example.com", cm_password="secret")
         detections = fetch_detections(cfg, client=mock_client)
         assert len(detections) == 3
-        assert all(isinstance(d, Detection) for d in detections)
+        mock_client.post.assert_called_once()
 
     def test_multi_page_pagination(
         self,
@@ -207,11 +219,7 @@ class TestSaveLoadDetections:
 
 @pytest.mark.integration
 def test_fetch_real_api():
-    """Integration test: hits the real Carbon Mapper API. Requires CM_EMAIL/CM_PASSWORD."""
-    import os
-
-    if not os.environ.get("CM_EMAIL") or not os.environ.get("CM_PASSWORD"):
-        pytest.skip("CM_EMAIL/CM_PASSWORD not set")
+    """Integration test: hits the real Carbon Mapper API (no auth needed for published plumes)."""
     cfg = PipelineConfig(limit=5)
     detections = fetch_detections(cfg)
     assert len(detections) > 0
