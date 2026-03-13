@@ -152,11 +152,15 @@ def _read_band_window(
     with rasterio.open(href) as ds:
         # Compute the window in the dataset's pixel coordinates
         window = window_from_bounds(left, bottom, right, top, ds.transform)
+        # boundless=True handles detections near MGRS tile edges where the
+        # window extends beyond raster bounds — fills out-of-bounds pixels with 0
         data = ds.read(
             1,
             window=window,
             out_shape=(height, width),
             resampling=rasterio.enums.Resampling.bilinear,
+            boundless=True,
+            fill_value=0,
         )
     return data
 

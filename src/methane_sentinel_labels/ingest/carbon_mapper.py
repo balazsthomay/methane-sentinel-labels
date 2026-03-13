@@ -71,8 +71,16 @@ def _paginate(
     offset = 0
 
     while True:
+        # Use smaller page size when limit is set to avoid over-fetching
+        page_size = _PAGE_SIZE
+        if cfg.limit is not None:
+            remaining = cfg.limit - len(detections)
+            if remaining <= 0:
+                break
+            page_size = min(_PAGE_SIZE, remaining)
+
         params: dict[str, int | str] = {
-            "limit": _PAGE_SIZE,
+            "limit": page_size,
             "offset": offset,
             "plume_gas": "CH4",
         }
@@ -93,8 +101,8 @@ def _paginate(
 
         offset += len(items)
 
-        # If we got fewer than PAGE_SIZE, we're done
-        if len(items) < _PAGE_SIZE:
+        # If we got fewer than requested, we've reached the end
+        if len(items) < page_size:
             break
 
     return detections

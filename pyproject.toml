@@ -5,8 +5,10 @@ description = "Cross-sensor methane plume label dataset generator for Sentinel-2
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "boto3>=1.42.67",
     "geopandas>=1.1.3",
     "httpx>=0.28.1",
+    "matplotlib>=3.10.8",
     "numpy>=2.4.3",
     "pyarrow>=23.0.1",
     "pyproj>=3.7.2",

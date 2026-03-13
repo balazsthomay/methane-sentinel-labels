@@ -108,6 +108,36 @@ class TestReadBandWindow:
         assert data is not None
         assert data.ndim == 2
 
+    def test_tile_edge_boundless_read(self, tmp_output: Path):
+        """Window extending beyond raster should not crash (boundless read)."""
+        # Create a small real GeoTIFF (100x100 pixels, 10m res)
+        raster_path = tmp_output / "tile_edge.tif"
+        height, width = 100, 100
+        raster_left, raster_bottom = 540000.0, 3570000.0
+        raster_right = raster_left + width * 10.0  # 541000
+        raster_top = raster_bottom + height * 10.0  # 3571000
+        transform = from_bounds(
+            raster_left, raster_bottom, raster_right, raster_top, width, height
+        )
+        data = np.ones((height, width), dtype=np.uint16) * 1000
+        with rasterio.open(
+            raster_path, "w", driver="GTiff",
+            height=height, width=width, count=1, dtype="uint16",
+            crs="EPSG:32613", transform=transform,
+        ) as dst:
+            dst.write(data, 1)
+
+        # Request a window that's mostly OUTSIDE the raster
+        # (negative row_off in pixel coords → RasterioIOError without boundless)
+        result = _read_band_window(
+            href=str(raster_path),
+            crs="EPSG:32613",
+            bounds=(540000, 3571000, 545120, 3576120),  # starts at top edge, extends 5120m beyond
+            target_res=20.0,
+        )
+        assert result is not None
+        assert result.shape == (256, 256)
+
 
 class TestWritePatchGeotiff:
     def test_write_and_read_back(self, tmp_output: Path):

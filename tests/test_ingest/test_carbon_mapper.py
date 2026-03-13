@@ -193,6 +193,36 @@ class TestFetchDetections:
         detections = fetch_detections(cfg, client=mock_client)
         assert len(detections) == 2
 
+    def test_limit_passed_to_api(self, page1_response: dict):
+        """When limit < PAGE_SIZE, API request should use limit as page size."""
+        mock_client = MagicMock(spec=httpx.Client)
+        mock_client.get.return_value = httpx.Response(
+            200, json=page1_response, request=httpx.Request("GET", "http://test")
+        )
+        cfg = PipelineConfig(limit=2)
+        fetch_detections(cfg, client=mock_client)
+        # Verify the API was called with limit=2, not PAGE_SIZE (1000)
+        call_kwargs = mock_client.get.call_args
+        assert call_kwargs.kwargs["params"]["limit"] == 2
+
+    def test_limit_stops_pagination_early(
+        self, page1_response: dict, monkeypatch
+    ):
+        """Pagination should stop once enough items are fetched, not fetch all pages."""
+        monkeypatch.setattr(
+            "methane_sentinel_labels.ingest.carbon_mapper._PAGE_SIZE", 3
+        )
+        mock_client = MagicMock(spec=httpx.Client)
+        # page1 has 3 items, should stop after first page since limit=2
+        mock_client.get.return_value = httpx.Response(
+            200, json=page1_response, request=httpx.Request("GET", "http://test")
+        )
+        cfg = PipelineConfig(limit=2)
+        detections = fetch_detections(cfg, client=mock_client)
+        assert len(detections) == 2
+        # Should only have made 1 GET request (no second page)
+        assert mock_client.get.call_count == 1
+
 
 class TestSaveLoadDetections:
     def test_roundtrip(self, tmp_output: Path, page1_response: dict):
