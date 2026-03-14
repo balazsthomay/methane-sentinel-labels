@@ -16,3 +16,5 @@ SPEC.md
 output/
 test_output/
 .env
+output*/
+.coverage

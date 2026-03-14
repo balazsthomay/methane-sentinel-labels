@@ -30,10 +30,11 @@ def extract_patches(
     patches_dir.mkdir(parents=True, exist_ok=True)
 
     records: list[PatchRecord] = []
-    for match in matches:
-        record = _extract_single_patch(match, cfg, latitude, longitude, patches_dir)
-        if record is not None:
-            records.append(record)
+    with rasterio.Env(GDAL_HTTP_TIMEOUT=120, GDAL_HTTP_CONNECTTIMEOUT=30):
+        for match in matches:
+            record = _extract_single_patch(match, cfg, latitude, longitude, patches_dir)
+            if record is not None:
+                records.append(record)
 
     logger.info("Extracted %d patches from %d matches", len(records), len(matches))
     return records
@@ -51,6 +52,30 @@ def _extract_single_patch(
         crs, bounds = _compute_utm_bounds(
             longitude, latitude, half_size_m=cfg.patch_half_size_m
         )
+
+        filename = f"{match.detection_source_id}_{match.scene_id}.tif"
+        patch_path = patches_dir / filename
+
+        # Resume: reuse existing patch instead of re-downloading
+        if patch_path.exists():
+            logger.debug("Reusing existing patch: %s", filename)
+            with rasterio.open(patch_path) as ds:
+                tags = ds.tags()
+            cloud_free = float(
+                tags.get("cloud_free_fraction", cfg.min_cloud_free_fraction)
+            )
+            return PatchRecord(
+                detection_source_id=match.detection_source_id,
+                scene_id=match.scene_id,
+                patch_path=str(patch_path.relative_to(cfg.output_dir)),
+                latitude=latitude,
+                longitude=longitude,
+                emission_rate_kg_hr=None,
+                time_delta_hours=match.time_delta_hours,
+                cloud_free_fraction=cloud_free,
+                crs=crs,
+                bbox=bounds,
+            )
 
         # Read all bands
         band_data: dict[str, np.ndarray] = {}
@@ -91,9 +116,10 @@ def _extract_single_patch(
         if not output_bands:
             return None
 
-        filename = f"{match.detection_source_id}_{match.scene_id}.tif"
-        patch_path = patches_dir / filename
-        _write_patch_geotiff(output_bands, crs, bounds, patch_path)
+        _write_patch_geotiff(
+            output_bands, crs, bounds, patch_path,
+            cloud_free_fraction=round(cloud_free, 4),
+        )
 
         return PatchRecord(
             detection_source_id=match.detection_source_id,
@@ -182,6 +208,8 @@ def _write_patch_geotiff(
     crs: str,
     bounds: tuple[float, float, float, float],
     path: Path,
+    *,
+    cloud_free_fraction: float | None = None,
 ) -> None:
     """Write a multi-band GeoTIFF patch."""
     band_names = sorted(bands.keys())
@@ -204,3 +232,5 @@ def _write_patch_geotiff(
         for i, name in enumerate(band_names, 1):
             dst.write(bands[name], i)
             dst.set_band_description(i, name)
+        if cloud_free_fraction is not None:
+            dst.update_tags(cloud_free_fraction=str(cloud_free_fraction))

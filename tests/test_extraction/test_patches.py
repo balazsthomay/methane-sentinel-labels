@@ -228,3 +228,40 @@ class TestExtractPatches:
             [scene_match], cfg, latitude=31.872, longitude=-103.245
         )
         assert len(records) == 0
+
+    @patch("methane_sentinel_labels.extraction.patches._read_band_window")
+    def test_skips_existing_patch(
+        self, mock_read, scene_match: SceneMatch, tmp_output: Path
+    ):
+        """Existing patch file should be reused without S3 reads."""
+        cfg = PipelineConfig(
+            output_dir=tmp_output,
+            bands=("B11", "B12"),
+            min_cloud_free_fraction=0.5,
+        )
+        # Create the patch file that would already exist
+        patches_dir = tmp_output / "patches"
+        patches_dir.mkdir(parents=True)
+        patch_path = patches_dir / f"{scene_match.detection_source_id}_{scene_match.scene_id}.tif"
+        bands = {"B11": np.ones((256, 256), dtype=np.uint16) * 1000}
+        bounds = (540000.0, 3570000.0, 545120.0, 3575120.0)
+        _write_patch_geotiff(bands, "EPSG:32613", bounds, patch_path, cloud_free_fraction=0.95)
+
+        records = extract_patches(
+            [scene_match], cfg, latitude=31.872, longitude=-103.245
+        )
+        assert len(records) == 1
+        assert records[0].cloud_free_fraction == pytest.approx(0.95)
+        # No S3 reads should have happened
+        mock_read.assert_not_called()
+
+    def test_cloud_free_tag_roundtrip(self, tmp_output: Path):
+        """cloud_free_fraction should survive write → read via GeoTIFF tags."""
+        bands = {"B11": np.ones((256, 256), dtype=np.uint16)}
+        bounds = (540000.0, 3570000.0, 545120.0, 3575120.0)
+        out_path = tmp_output / "tagged.tif"
+        _write_patch_geotiff(bands, "EPSG:32613", bounds, out_path, cloud_free_fraction=0.8765)
+
+        with rasterio.open(out_path) as ds:
+            tags = ds.tags()
+        assert float(tags["cloud_free_fraction"]) == pytest.approx(0.8765)
