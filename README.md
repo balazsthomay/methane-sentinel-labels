@@ -12,6 +12,8 @@ Training detectors on synthetic plumes (via radiative transfer simulation) is ef
 
 ## Full-scale results
 
+![Detection map](docs/detection_map.png)
+
 The pipeline processed the full Carbon Mapper catalog:
 
 | Metric | Value |
