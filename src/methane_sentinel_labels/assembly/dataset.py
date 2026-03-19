@@ -7,12 +7,12 @@ from pathlib import Path
 
 import pandas as pd
 
-from methane_sentinel_labels.models import PatchRecord
+from methane_sentinel_labels.models import PatchRecord, TrainingPatch
 
 logger = logging.getLogger(__name__)
 
 
-def assemble_dataset(records: list[PatchRecord], output_dir: Path) -> None:
+def assemble_dataset(records: list[PatchRecord] | list[TrainingPatch], output_dir: Path) -> None:
     """Assemble the final dataset: manifest + summary."""
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -28,7 +28,7 @@ def assemble_dataset(records: list[PatchRecord], output_dir: Path) -> None:
     )
 
 
-def _write_manifest(records: list[PatchRecord], path: Path) -> None:
+def _write_manifest(records: list[PatchRecord] | list[TrainingPatch], path: Path) -> None:
     """Write patch records to a Parquet manifest."""
     rows = []
     for r in records:
@@ -41,7 +41,7 @@ def _write_manifest(records: list[PatchRecord], path: Path) -> None:
     logger.info("Manifest written: %d records to %s", len(records), path)
 
 
-def _compute_summary(records: list[PatchRecord]) -> dict:
+def _compute_summary(records: list[PatchRecord] | list[TrainingPatch]) -> dict:
     """Compute aggregate summary statistics."""
     if not records:
         return {"total_patches": 0}

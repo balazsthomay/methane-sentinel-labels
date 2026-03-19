@@ -110,3 +110,25 @@ def _item_to_scene_match(
         mgrs_tile=mgrs_tile,
         band_hrefs=band_hrefs,
     )
+
+
+def query_stac_bbox(
+    bbox: tuple[float, float, float, float],
+    time_center: datetime,
+    cfg: PipelineConfig,
+) -> list:
+    """Query the STAC catalog for Sentinel-2 scenes intersecting a bounding box."""
+    catalog = STACClient.open(cfg.stac_url)
+
+    delta = timedelta(hours=cfg.max_time_delta_hours)
+    start = time_center - delta
+    end = time_center + delta
+
+    search = catalog.search(
+        collections=[cfg.stac_collection],
+        bbox=list(bbox),
+        datetime=f"{start.isoformat()}/{end.isoformat()}",
+        query={"eo:cloud_cover": {"lte": cfg.max_cloud_cover_pct}},
+    )
+
+    return list(search.items())

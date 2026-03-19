@@ -14,10 +14,12 @@ from methane_sentinel_labels.extraction.patches import (
     _compute_cloud_free_fraction,
     _compute_utm_bounds,
     _read_band_window,
+    _reproject_mask_to_s2_grid,
     _write_patch_geotiff,
     extract_patches,
+    extract_training_patch,
 )
-from methane_sentinel_labels.models import PatchRecord, SceneMatch
+from methane_sentinel_labels.models import MatchedPair, PatchRecord, SceneMatch, TrainingPatch
 
 
 @pytest.fixture
@@ -265,3 +267,116 @@ class TestExtractPatches:
         with rasterio.open(out_path) as ds:
             tags = ds.tags()
         assert float(tags["cloud_free_fraction"]) == pytest.approx(0.8765)
+
+
+class TestReprojectMaskToS2Grid:
+    def test_reprojects_known_mask(self, tmp_output: Path):
+        """A mask in EPSG:4326 should reproject to UTM preserving plume location."""
+        # Create a mask in EPSG:4326 with a known plume at center
+        mask_path = tmp_output / "mask_4326.tif"
+        height, width = 100, 100
+        mask_data = np.zeros((height, width), dtype=np.uint8)
+        mask_data[40:60, 40:60] = 1  # plume at center
+
+        transform_4326 = from_bounds(-103.5, 31.0, -103.0, 31.5, width, height)
+        with rasterio.open(
+            mask_path, "w", driver="GTiff",
+            height=height, width=width, count=1, dtype="uint8",
+            crs="EPSG:4326", transform=transform_4326,
+        ) as ds:
+            ds.write(mask_data, 1)
+
+        # Reproject to UTM zone 13N
+        crs, bounds = _compute_utm_bounds(-103.25, 31.25, half_size_m=2560.0)
+        result = _reproject_mask_to_s2_grid(
+            str(mask_path), crs, bounds, (256, 256)
+        )
+        assert result.shape == (256, 256)
+        assert result.dtype == np.uint8
+        # Should have some plume pixels
+        assert result.sum() > 0
+        # Should be binary
+        assert set(np.unique(result)) <= {0, 1}
+
+    def test_no_overlap_returns_zeros(self, tmp_output: Path):
+        """Mask far from target bounds should produce all-zero output."""
+        mask_path = tmp_output / "mask_far.tif"
+        height, width = 50, 50
+        mask_data = np.ones((height, width), dtype=np.uint8)
+
+        # Mask in Europe
+        transform_4326 = from_bounds(10.0, 50.0, 11.0, 51.0, width, height)
+        with rasterio.open(
+            mask_path, "w", driver="GTiff",
+            height=height, width=width, count=1, dtype="uint8",
+            crs="EPSG:4326", transform=transform_4326,
+        ) as ds:
+            ds.write(mask_data, 1)
+
+        # Target in Texas
+        crs, bounds = _compute_utm_bounds(-103.25, 31.25, half_size_m=2560.0)
+        result = _reproject_mask_to_s2_grid(
+            str(mask_path), crs, bounds, (256, 256)
+        )
+        assert result.sum() == 0
+
+
+class TestExtractTrainingPatch:
+    @patch("methane_sentinel_labels.extraction.patches._read_band_window")
+    def test_produces_training_patch(self, mock_read, tmp_output: Path):
+        # Create a real mask file for reprojection
+        mask_path = tmp_output / "mask.tif"
+        mask_data = np.zeros((100, 100), dtype=np.uint8)
+        mask_data[40:60, 40:60] = 1
+        transform_4326 = from_bounds(-103.5, 31.0, -103.0, 31.5, 100, 100)
+        with rasterio.open(
+            mask_path, "w", driver="GTiff",
+            height=100, width=100, count=1, dtype="uint8",
+            crs="EPSG:4326", transform=transform_4326,
+        ) as ds:
+            ds.write(mask_data, 1)
+
+        pair = MatchedPair(
+            msat_scene_id="MST001",
+            s2_scene_id="S2A_20240912",
+            msat_acquisition_time=datetime(2024, 9, 11, 22, 0, tzinfo=timezone.utc),
+            s2_acquisition_time=datetime(2024, 9, 12, 10, 30, tzinfo=timezone.utc),
+            time_delta_hours=12.5,
+            msat_mask_path=str(mask_path),
+            s2_band_hrefs={
+                "B02": "https://example.com/B02.tif",
+                "B03": "https://example.com/B03.tif",
+                "B04": "https://example.com/B04.tif",
+                "B8A": "https://example.com/B8A.tif",
+                "B11": "https://example.com/B11.tif",
+                "B12": "https://example.com/B12.tif",
+                "SCL": "https://example.com/SCL.tif",
+            },
+            s2_mgrs_tile="13SDA",
+            bbox=(-103.5, 31.0, -103.0, 31.5),
+            s2_cloud_cover_pct=10.0,
+        )
+
+        def smart_read(**kwargs):
+            if "SCL" in kwargs.get("href", ""):
+                return np.full((256, 256), 4, dtype=np.float32)
+            return np.random.default_rng(42).random((256, 256)).astype(np.float32) * 1000 + 500
+
+        mock_read.side_effect = smart_read
+
+        cfg = PipelineConfig(
+            output_dir=tmp_output,
+            min_cloud_free_fraction=0.0,
+        )
+        result = extract_training_patch(pair, cfg)
+        assert result is not None
+        assert isinstance(result, TrainingPatch)
+        assert result.msat_scene_id == "MST001"
+        assert "varon" in result.band_names
+        assert "mask" in result.band_names
+
+        # Verify GeoTIFF output
+        full_path = tmp_output / result.patch_path
+        assert full_path.exists()
+        with rasterio.open(full_path) as ds:
+            assert ds.count == 8  # B02, B03, B04, B8A, B11, B12, varon, mask
