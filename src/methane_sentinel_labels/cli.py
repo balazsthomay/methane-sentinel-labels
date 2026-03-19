@@ -7,7 +7,7 @@ from pathlib import Path
 
 from methane_sentinel_labels.assembly.dataset import assemble_dataset
 from methane_sentinel_labels.config import PipelineConfig
-from methane_sentinel_labels.extraction.patches import extract_patches, extract_training_patch
+from methane_sentinel_labels.extraction.patches import extract_patches, extract_training_patch, extract_training_patches_tiled
 from methane_sentinel_labels.ingest.carbon_mapper import (
     fetch_detections,
     load_detections,
@@ -247,13 +247,12 @@ def _cmd_msat_run(args: argparse.Namespace) -> None:
         logger.warning("No MethaneSAT→S2 pairs found. Stopping.")
         return
 
-    # Step C: Training patch extraction
-    logger.info("=== Step C: Training patch extraction ===")
+    # Step C: Training patch extraction (tiled)
+    logger.info("=== Step C: Training patch extraction (tiled) ===")
     training_records = []
     for pair in pairs:
-        record = extract_training_patch(pair, cfg)
-        if record is not None:
-            training_records.append(record)
+        records = extract_training_patches_tiled(pair, cfg)
+        training_records.extend(records)
 
     logger.info(
         "MethaneSAT pipeline complete: %d scenes → %d masks → %d pairs → %d training patches",

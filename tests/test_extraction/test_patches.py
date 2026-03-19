@@ -18,6 +18,7 @@ from methane_sentinel_labels.extraction.patches import (
     _write_patch_geotiff,
     extract_patches,
     extract_training_patch,
+    find_plume_patch_centers,
 )
 from methane_sentinel_labels.models import MatchedPair, PatchRecord, SceneMatch, TrainingPatch
 
@@ -319,6 +320,86 @@ class TestReprojectMaskToS2Grid:
             str(mask_path), crs, bounds, (256, 256)
         )
         assert result.sum() == 0
+
+
+class TestFindPlumePatchCenters:
+    def test_finds_plume_tiles(self, tmp_output: Path):
+        """Tiles with plume pixels should produce centers."""
+        mask_path = tmp_output / "multi_plume_mask.tif"
+        height, width = 400, 400
+        mask = np.zeros((height, width), dtype=np.uint8)
+        # Two plume regions in different grid tiles
+        mask[20:50, 20:50] = 1  # top-left region
+        mask[300:330, 300:330] = 1  # bottom-right region
+
+        transform_4326 = from_bounds(-103.5, 31.0, -102.5, 32.0, width, height)
+        with rasterio.open(
+            mask_path, "w", driver="GTiff",
+            height=height, width=width, count=1, dtype="uint8",
+            crs="EPSG:4326", transform=transform_4326,
+        ) as ds:
+            ds.write(mask, 1)
+
+        centers = find_plume_patch_centers(str(mask_path), min_plume_pixels=10)
+        assert len(centers) >= 2  # at least 2 positive + some negatives
+
+    def test_filters_sparse_plume(self, tmp_output: Path):
+        """Tiles with very few plume pixels should be filtered."""
+        mask_path = tmp_output / "sparse_mask.tif"
+        height, width = 200, 200
+        mask = np.zeros((height, width), dtype=np.uint8)
+        mask[50, 50] = 1  # single pixel
+
+        transform_4326 = from_bounds(-103.5, 31.0, -103.0, 31.5, width, height)
+        with rasterio.open(
+            mask_path, "w", driver="GTiff",
+            height=height, width=width, count=1, dtype="uint8",
+            crs="EPSG:4326", transform=transform_4326,
+        ) as ds:
+            ds.write(mask, 1)
+
+        centers = find_plume_patch_centers(
+            str(mask_path), min_plume_pixels=50, include_negatives=False
+        )
+        assert len(centers) == 0
+
+    def test_empty_mask(self, tmp_output: Path):
+        mask_path = tmp_output / "empty_mask.tif"
+        height, width = 50, 50
+        mask = np.zeros((height, width), dtype=np.uint8)
+        transform_4326 = from_bounds(-103.5, 31.0, -103.0, 31.5, width, height)
+        with rasterio.open(
+            mask_path, "w", driver="GTiff",
+            height=height, width=width, count=1, dtype="uint8",
+            crs="EPSG:4326", transform=transform_4326,
+        ) as ds:
+            ds.write(mask, 1)
+
+        centers = find_plume_patch_centers(str(mask_path), min_plume_pixels=10)
+        assert len(centers) == 0
+
+    def test_respects_max_patches(self, tmp_output: Path):
+        mask_path = tmp_output / "many_plumes.tif"
+        height, width = 1000, 1000
+        mask = np.zeros((height, width), dtype=np.uint8)
+        # Fill with scattered plume regions
+        for i in range(0, 900, 100):
+            for j in range(0, 900, 100):
+                mask[i:i+20, j:j+20] = 1
+
+        transform_4326 = from_bounds(-105.0, 30.0, -100.0, 35.0, width, height)
+        with rasterio.open(
+            mask_path, "w", driver="GTiff",
+            height=height, width=width, count=1, dtype="uint8",
+            crs="EPSG:4326", transform=transform_4326,
+        ) as ds:
+            ds.write(mask, 1)
+
+        centers = find_plume_patch_centers(
+            str(mask_path), min_plume_pixels=5, max_patches_per_scene=5,
+            include_negatives=False,
+        )
+        assert len(centers) <= 5
 
 
 class TestExtractTrainingPatch:

@@ -212,6 +212,116 @@ def _compute_cloud_free_fraction(scl: np.ndarray) -> float:
     return float(clear_mask.sum()) / float(valid_count)
 
 
+def find_plume_patch_centers(
+    mask_path: str,
+    *,
+    min_plume_pixels: int = 10,
+    patch_half_size_m: float = 2560.0,
+    max_patches_per_scene: int = 20,
+    include_negatives: bool = True,
+) -> list[tuple[float, float]]:
+    """Find centers (lon, lat) for training patches by grid-tiling the mask.
+
+    Tiles the valid mask area into non-overlapping grid cells (~5km),
+    keeps tiles with plume pixels as positives, and samples some
+    plume-free tiles as negatives.
+    """
+    with rasterio.open(mask_path) as ds:
+        mask = ds.read(1)
+        transform = ds.transform
+        bounds = ds.bounds
+
+    total_plume = int(mask.sum())
+    if total_plume == 0:
+        return []
+
+    height, width = mask.shape
+
+    # Grid step in pixels (patch_half_size_m * 2 in geographic coords)
+    # Resolution is ~0.000417° per pixel ≈ 46m
+    pixel_res_deg = abs(transform[0])  # degrees per pixel
+    patch_size_deg = (2 * patch_half_size_m / 1000) / 111  # approx degrees
+    step_pixels = max(1, int(patch_size_deg / pixel_res_deg))
+
+    positive_centers: list[tuple[float, float, int]] = []  # (lon, lat, plume_count)
+    negative_centers: list[tuple[float, float]] = []
+
+    for row in range(0, height - step_pixels, step_pixels):
+        for col in range(0, width - step_pixels, step_pixels):
+            tile = mask[row:row + step_pixels, col:col + step_pixels]
+            plume_count = int(tile.sum())
+
+            # Skip tiles that are mostly NaN/nodata in the source
+            center_row = row + step_pixels // 2
+            center_col = col + step_pixels // 2
+            lon, lat = rasterio.transform.xy(transform, center_row, center_col)
+
+            if plume_count >= min_plume_pixels:
+                positive_centers.append((lon, lat, plume_count))
+            elif include_negatives and plume_count == 0 and tile.size > 0:
+                negative_centers.append((lon, lat))
+
+    # Sort positives by plume count descending, take top N
+    positive_centers.sort(key=lambda x: -x[2])
+    n_pos = min(len(positive_centers), max_patches_per_scene)
+    selected = [(lon, lat) for lon, lat, _ in positive_centers[:n_pos]]
+
+    # Add some negatives (up to same count as positives)
+    if include_negatives and negative_centers:
+        rng = np.random.default_rng(42)
+        n_neg = min(len(negative_centers), n_pos)
+        neg_idx = rng.choice(len(negative_centers), size=n_neg, replace=False)
+        selected.extend([negative_centers[i] for i in neg_idx])
+
+    logger.info(
+        "Mask %s: %d positive tiles, %d negative → selected %d centers",
+        Path(mask_path).stem, len(positive_centers), len(negative_centers), len(selected),
+    )
+    return selected
+
+
+def extract_training_patches_tiled(
+    pair: MatchedPair,
+    cfg: PipelineConfig,
+) -> list[TrainingPatch]:
+    """Extract multiple training patches per matched pair by tiling plume clusters."""
+    centers = find_plume_patch_centers(
+        pair.msat_mask_path,
+        min_cluster_pixels=cfg.msat_min_plume_pixels,
+        patch_half_size_m=cfg.patch_half_size_m,
+    )
+
+    if not centers:
+        # Fall back to single center patch
+        result = extract_training_patch(pair, cfg)
+        return [result] if result else []
+
+    records: list[TrainingPatch] = []
+    for i, (lon, lat) in enumerate(centers):
+        # Create a sub-pair with adjusted bbox centered on this cluster
+        sub_pair = MatchedPair(
+            msat_scene_id=f"{pair.msat_scene_id}_c{i:03d}",
+            s2_scene_id=pair.s2_scene_id,
+            msat_acquisition_time=pair.msat_acquisition_time,
+            s2_acquisition_time=pair.s2_acquisition_time,
+            time_delta_hours=pair.time_delta_hours,
+            msat_mask_path=pair.msat_mask_path,
+            s2_band_hrefs=pair.s2_band_hrefs,
+            s2_mgrs_tile=pair.s2_mgrs_tile,
+            bbox=(lon - 0.05, lat - 0.05, lon + 0.05, lat + 0.05),
+            s2_cloud_cover_pct=pair.s2_cloud_cover_pct,
+        )
+        record = extract_training_patch(sub_pair, cfg)
+        if record is not None:
+            records.append(record)
+
+    logger.info(
+        "Tiled extraction for %s: %d centers → %d patches",
+        pair.msat_scene_id, len(centers), len(records),
+    )
+    return records
+
+
 def extract_training_patch(
     pair: MatchedPair,
     cfg: PipelineConfig,
