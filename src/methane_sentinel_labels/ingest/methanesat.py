@@ -78,12 +78,18 @@ def parse_scene(local_path: Path) -> MethaneSATScene:
     scene_id = tags.get("collection_id", local_path.stem)
     target_id = tags.get("target_id", "")
 
+    # Normalize bbox: ensure (lon_min, lat_min, lon_max, lat_max) order
+    lon_min = min(bounds.left, bounds.right)
+    lon_max = max(bounds.left, bounds.right)
+    lat_min = min(bounds.bottom, bounds.top)
+    lat_max = max(bounds.bottom, bounds.top)
+
     return MethaneSATScene(
         scene_id=scene_id,
         gcs_path=str(local_path),
         local_path=str(local_path),
         acquisition_time=acq_time,
-        bbox=(bounds.left, bounds.bottom, bounds.right, bounds.top),
+        bbox=(lon_min, lat_min, lon_max, lat_max),
         crs=str(ds.crs) if hasattr(ds, "crs") else "EPSG:4326",
         resolution_m=46.4,
         xch4_median_ppb=float(np.median(valid)),

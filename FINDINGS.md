@@ -50,3 +50,24 @@ A 50 ppb anomaly threshold captures ~1% of valid pixels — reasonable for plume
 
 ### Decision: Dependencies
 COG/GeoTIFF format → use existing `rasterio`. No need for `xarray`/`netCDF4`/`zarr`. Add `scipy` for morphological filtering only.
+
+### Bug Fix: Bbox Ordering
+MethaneSAT COGs have inverted Y-axis in rasterio bounds (`bottom > top` in lat). Fixed `parse_scene` to normalize bbox to `(lon_min, lat_min, lon_max, lat_max)` order required by STAC API.
+
+## End-to-End Pipeline Validation (2026-03-19)
+
+### Run: 3 scenes from target t100 (San Joaquin Valley, CA)
+
+| Scene | Plume Pixels | Plume % | Best S2 Match | Δt (hours) | Cloud % |
+|-------|-------------|---------|---------------|-----------|---------|
+| 01460640 | 342,664 | 2.0% | S2B_11SLU_20240909 | 51.4h | 6.2% |
+| 02F00640 | 729,846 | 3.6% | S2B_11SLU_20241019 | 27.2h | 0.2% |
+| 03900640 | 706,295 | 4.0% | S2A_11SLT_20241103 | 27.3h | 0.6% |
+
+### Key Results
+- **Mask generation**: 3/3 scenes produced usable plume masks at 50 ppb threshold
+- **Cross-sensor matching**: 3/3 masks matched to Sentinel-2 within 72h
+- **Time deltas**: 27–51h (median ~27h — excellent)
+- **Cloud cover**: 0.2–6.2% (very clean scenes)
+- **Training patch**: First patch extracted successfully — 1,059 plume pixels (1.6% of 256×256 patch)
+- **Decision point passed**: All 3 scenes viable → proceed to scale up
