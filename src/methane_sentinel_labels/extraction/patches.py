@@ -178,8 +178,15 @@ def _read_band_window(
     height = int((top - bottom) / target_res)
 
     with rasterio.open(href) as ds:
+        # Reproject bounds to dataset CRS if they differ (cross UTM zone)
+        ds_left, ds_bottom, ds_right, ds_top = left, bottom, right, top
+        if str(ds.crs) != crs:
+            t = Transformer.from_crs(crs, ds.crs, always_xy=True)
+            ds_left, ds_bottom = t.transform(left, bottom)
+            ds_right, ds_top = t.transform(right, top)
+
         # Compute the window in the dataset's pixel coordinates
-        window = window_from_bounds(left, bottom, right, top, ds.transform)
+        window = window_from_bounds(ds_left, ds_bottom, ds_right, ds_top, ds.transform)
         # boundless=True handles detections near MGRS tile edges where the
         # window extends beyond raster bounds — fills out-of-bounds pixels with 0
         data = ds.read(
@@ -384,7 +391,7 @@ def _write_patch_geotiff(
         height=height,
         width=width,
         count=len(band_names),
-        dtype=first.dtype,
+        dtype=np.float32,
         crs=crs,
         transform=transform,
     ) as dst:

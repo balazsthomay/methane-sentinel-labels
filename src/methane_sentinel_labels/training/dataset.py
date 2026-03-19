@@ -82,7 +82,19 @@ class MethanePlumeDataset(Dataset):
             input_data = transformed["image"].transpose(2, 0, 1)  # back to (C, H, W)
             mask = transformed["mask"]
 
-        input_tensor = torch.from_numpy(input_data.astype(np.float32))
+        # Normalize: per-channel to [0, 1] range
+        input_data = input_data.astype(np.float32)
+        for c in range(input_data.shape[0]):
+            ch = input_data[c]
+            valid = ch[ch > 0]
+            if valid.size > 0:
+                lo, hi = np.percentile(valid, [1, 99])
+                if hi > lo:
+                    input_data[c] = np.clip((ch - lo) / (hi - lo), 0, 1)
+                else:
+                    input_data[c] = 0
+
+        input_tensor = torch.from_numpy(input_data)
         mask_tensor = torch.from_numpy(mask.astype(np.float32)).unsqueeze(0)  # (1, H, W)
 
         return input_tensor, mask_tensor
