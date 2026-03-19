@@ -71,3 +71,31 @@ MethaneSAT COGs have inverted Y-axis in rasterio bounds (`bottom > top` in lat).
 - **Cloud cover**: 0.2–6.2% (very clean scenes)
 - **Training patch**: First patch extracted successfully — 1,059 plume pixels (1.6% of 256×256 patch)
 - **Decision point passed**: All 3 scenes viable → proceed to scale up
+
+## Full-Scale Pipeline Results (2026-03-19)
+
+### Ingestion
+- 269 GCS files → 47 unique scenes (many are duplicate processing variants sharing the same collection_id)
+- **47/47 scenes produced usable plume masks** (100% yield at 50 ppb threshold)
+- Plume fractions: 0.2%–7.3% of valid pixels
+
+### Cross-Sensor Matching
+- **44/47 masks matched to Sentinel-2** within 72h (94% match rate)
+- 3 unmatched scenes had no S2 coverage in the time window
+
+### Patch Extraction
+- **36/44 training patches extracted** (82% — 8 filtered by cloud cover)
+- 23 positive (contain plume pixels), 13 negative (background)
+- Plume fraction in positive patches: min 0.09%, median 2.3%, max 9.2%
+
+### Training Results (U-Net ResNet34, 50 epochs, BCE loss)
+- Best F1: **0.027** at epoch 27 (precision 4.0%, recall 2.0%)
+- Model learns non-trivial signal — F1 climbs from 0 through epochs 20-30
+- Train loss converges (0.58 → 0.39), val loss flat (~0.84) — overfitting on small dataset
+- **Interpretation**: weak but real detection signal exists in Sentinel-2 SWIR at MethaneSAT plume locations. 36 patches is too few for robust learning — the model correctly identifies some plume regions but can't reliably separate from background noise.
+
+### Limiting Factors
+1. **Dataset size**: 36 patches is at the very bottom of trainable. CH4Net used 925 patches.
+2. **Label noise**: 50 ppb threshold produces broad masks (2-7% of scene). Many "plume" pixels may be retrieval noise rather than real methane.
+3. **Spatial mismatch**: MethaneSAT 45m mask reprojected to 20m S2 grid loses precision. Time delta (3-69h) means plume may have moved.
+4. **Class imbalance**: even in "positive" patches, plume pixels are <10% of the patch.
