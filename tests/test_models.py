@@ -5,7 +5,15 @@ from datetime import datetime, timezone
 
 import pytest
 
-from methane_sentinel_labels.models import Detection, PatchRecord, SceneMatch
+from methane_sentinel_labels.models import (
+    Detection,
+    MatchedPair,
+    MethaneSATScene,
+    PatchRecord,
+    PlumeMask,
+    SceneMatch,
+    TrainingPatch,
+)
 
 
 class TestDetection:
@@ -114,3 +122,88 @@ class TestPatchRecord:
         )
         with pytest.raises(FrozenInstanceError):
             pr.patch_path = "other.tif"  # type: ignore[misc]
+
+
+class TestMethaneSATScene:
+    def test_create(self):
+        scene = MethaneSATScene(
+            scene_id="TEST001",
+            gcs_path="cog_gee/t100/scene.tif",
+            local_path="/tmp/scene.tif",
+            acquisition_time=datetime(2024, 9, 11, 22, 5, tzinfo=timezone.utc),
+            bbox=(-103.5, 31.0, -103.0, 31.5),
+            crs="EPSG:4326",
+            resolution_m=46.4,
+            xch4_median_ppb=1930.0,
+            target_id="100",
+        )
+        assert scene.scene_id == "TEST001"
+        assert scene.xch4_median_ppb == 1930.0
+
+    def test_frozen(self):
+        scene = MethaneSATScene(
+            scene_id="TEST001",
+            gcs_path="",
+            local_path="",
+            acquisition_time=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            bbox=(0, 0, 1, 1),
+            crs="EPSG:4326",
+            resolution_m=46.4,
+            xch4_median_ppb=1930.0,
+            target_id="100",
+        )
+        with pytest.raises(FrozenInstanceError):
+            scene.scene_id = "other"  # type: ignore[misc]
+
+
+class TestPlumeMask:
+    def test_create(self):
+        mask = PlumeMask(
+            scene_id="TEST001",
+            mask_path="/tmp/mask.tif",
+            threshold_ppb=50.0,
+            anomaly_method="median_subtract",
+            plume_pixel_count=400,
+            total_valid_pixels=10000,
+            plume_fraction=0.04,
+            bbox=(-103.5, 31.0, -103.0, 31.5),
+            crs="EPSG:4326",
+        )
+        assert mask.plume_fraction == 0.04
+        assert mask.plume_pixel_count == 400
+
+
+class TestMatchedPair:
+    def test_create(self):
+        pair = MatchedPair(
+            msat_scene_id="MST001",
+            s2_scene_id="S2A_20240912",
+            msat_acquisition_time=datetime(2024, 9, 11, 22, 0, tzinfo=timezone.utc),
+            s2_acquisition_time=datetime(2024, 9, 12, 10, 30, tzinfo=timezone.utc),
+            time_delta_hours=12.5,
+            msat_mask_path="/tmp/mask.tif",
+            s2_band_hrefs={"B11": "https://example.com/B11.tif"},
+            s2_mgrs_tile="13SDA",
+            bbox=(-103.5, 31.0, -103.0, 31.5),
+            s2_cloud_cover_pct=10.0,
+        )
+        assert pair.time_delta_hours == 12.5
+        assert pair.s2_band_hrefs["B11"] == "https://example.com/B11.tif"
+
+
+class TestTrainingPatch:
+    def test_create(self):
+        tp = TrainingPatch(
+            msat_scene_id="MST001",
+            s2_scene_id="S2A_20240912",
+            patch_path="patches/train_001.tif",
+            bbox=(-103.5, 31.0, -103.0, 31.5),
+            crs="EPSG:32613",
+            time_delta_hours=12.5,
+            cloud_free_fraction=0.95,
+            plume_pixel_count=100,
+            plume_fraction=0.015,
+            band_names=("B11", "B12", "B8A", "varon", "mask"),
+        )
+        assert tp.plume_pixel_count == 100
+        assert "varon" in tp.band_names

@@ -36,6 +36,26 @@ class PipelineConfig:
     min_cloud_free_fraction: float = 0.5
     bands: tuple[str, ...] = ("B02", "B03", "B04", "B8A", "B11", "B12", "SCL")
 
+    # MethaneSAT
+    msat_gcs_bucket: str = "msat-prod-data-public-methanesat-level3"
+    msat_gcs_project: str = "methanesat-public"
+    msat_local_cache: Path = field(default_factory=lambda: Path("output/msat_cache"))
+    msat_anomaly_method: str = "median_subtract"
+    msat_plume_threshold_ppb: float = 50.0
+    msat_min_plume_pixels: int = 10
+    msat_morpho_kernel_size: int = 3
+
+    # Cross-sensor matching
+    msat_max_time_delta_hours: float = 72.0
+    msat_min_spatial_overlap: float = 0.1
+
+    # Enhancement products
+    varon_reference_method: str = "spatial"
+
+    # Training
+    training_input_bands: tuple[str, ...] = ("varon", "B11", "B12", "B8A")
+    training_patch_size_px: int = 256
+
     # Output
     output_dir: Path = Path("output")
 

@@ -5,9 +5,11 @@ description = "Cross-sensor methane plume label dataset generator for Sentinel-2
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "albumentations>=2.0.8",
     "boto3>=1.42.67",
     "geodatasets>=2026.1.0",
     "geopandas>=1.1.3",
+    "google-cloud-storage>=3.10.0",
     "httpx>=0.28.1",
     "matplotlib>=3.10.8",
     "numpy>=2.4.3",
@@ -15,7 +17,12 @@ dependencies = [
     "pyproj>=3.7.2",
     "pystac-client>=0.9.0",
     "rasterio>=1.5.0",
+    "scikit-learn>=1.8.0",
+    "scipy>=1.17.1",
+    "segmentation-models-pytorch>=0.5.0",
     "shapely>=2.1.2",
+    "torch>=2.10.0",
+    "torchvision>=0.25.0",
 ]
 
 [build-system]
