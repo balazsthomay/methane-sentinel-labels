@@ -7,12 +7,14 @@ from pathlib import Path
 
 from methane_sentinel_labels.assembly.dataset import assemble_dataset
 from methane_sentinel_labels.config import PipelineConfig
-from methane_sentinel_labels.extraction.patches import extract_patches
+from methane_sentinel_labels.extraction.patches import extract_patches, extract_training_patch
 from methane_sentinel_labels.ingest.carbon_mapper import (
     fetch_detections,
     load_detections,
     save_detections,
 )
+from methane_sentinel_labels.ingest.methanesat import ingest_methanesat
+from methane_sentinel_labels.matching.cross_sensor import find_sentinel2_matches
 from methane_sentinel_labels.matching.sentinel2 import find_matches
 from methane_sentinel_labels.visualization import visualize_dataset
 
@@ -66,6 +68,20 @@ def main(argv: list[str] | None = None) -> None:
     run_parser.add_argument("--patch-size", type=float, default=2560.0, help="Patch half-size in meters")
     run_parser.add_argument("--min-cloud-free", type=float, default=0.5, help="Min cloud-free fraction")
 
+    # msat-ingest subcommand
+    msat_ingest_parser = subparsers.add_parser(
+        "msat-ingest", parents=[common], help="Ingest MethaneSAT L3 scenes and generate plume masks"
+    )
+    msat_ingest_parser.add_argument("--threshold", type=float, default=50.0, help="Plume threshold in ppb")
+
+    # msat-run subcommand (full MethaneSAT pipeline)
+    msat_run_parser = subparsers.add_parser(
+        "msat-run", parents=[common], help="Run full MethaneSAT→Sentinel-2 pipeline"
+    )
+    msat_run_parser.add_argument("--threshold", type=float, default=50.0, help="Plume threshold in ppb")
+    msat_run_parser.add_argument("--max-time-delta", type=float, default=72.0, help="Max time delta in hours")
+    msat_run_parser.add_argument("--max-cloud-cover", type=float, default=30.0, help="Max cloud cover percent")
+
     args = parser.parse_args(argv)
 
     if args.command is None:
@@ -88,6 +104,10 @@ def main(argv: list[str] | None = None) -> None:
         _cmd_extract(args)
     elif args.command == "run":
         _cmd_run(args)
+    elif args.command == "msat-ingest":
+        _cmd_msat_ingest(args)
+    elif args.command == "msat-run":
+        _cmd_msat_run(args)
 
 
 def _cmd_ingest(args: argparse.Namespace) -> None:
@@ -189,6 +209,58 @@ def _cmd_run(args: argparse.Namespace) -> None:
         "Pipeline complete: %d detections → %d patches",
         len(detections),
         len(all_records),
+    )
+
+
+def _cmd_msat_ingest(args: argparse.Namespace) -> None:
+    cfg = PipelineConfig(
+        output_dir=args.output_dir,
+        limit=args.limit,
+        msat_plume_threshold_ppb=args.threshold,
+    )
+    scenes, masks = ingest_methanesat(cfg)
+    logger.info(
+        "MethaneSAT ingest: %d scenes, %d usable plume masks", len(scenes), len(masks)
+    )
+
+
+def _cmd_msat_run(args: argparse.Namespace) -> None:
+    cfg = PipelineConfig(
+        output_dir=args.output_dir,
+        limit=args.limit,
+        msat_plume_threshold_ppb=args.threshold,
+        msat_max_time_delta_hours=args.max_time_delta,
+        max_cloud_cover_pct=args.max_cloud_cover,
+    )
+
+    # Step A: MethaneSAT ingestion
+    logger.info("=== Step A: MethaneSAT L3 ingestion ===")
+    scenes, masks = ingest_methanesat(cfg)
+    if not masks:
+        logger.warning("No usable plume masks. Stopping.")
+        return
+
+    # Step B: Cross-sensor matching
+    logger.info("=== Step B: Cross-sensor matching ===")
+    pairs = find_sentinel2_matches(masks, scenes, cfg)
+    if not pairs:
+        logger.warning("No MethaneSAT→S2 pairs found. Stopping.")
+        return
+
+    # Step C: Training patch extraction
+    logger.info("=== Step C: Training patch extraction ===")
+    training_records = []
+    for pair in pairs:
+        record = extract_training_patch(pair, cfg)
+        if record is not None:
+            training_records.append(record)
+
+    logger.info(
+        "MethaneSAT pipeline complete: %d scenes → %d masks → %d pairs → %d training patches",
+        len(scenes),
+        len(masks),
+        len(pairs),
+        len(training_records),
     )
 
 
