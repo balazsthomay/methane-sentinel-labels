@@ -118,5 +118,21 @@ The model sees the MethaneSAT signal in Sentinel-2 SWIR bands — recall is near
 - 80 patches insufficient for the model to learn fine-grained spatial discrimination
 - The Varon ratio successfully highlighting the spectral signature
 
+## Validation Results (2026-03-20)
+
+### Self-Validation (model v4 on training patches)
+No Carbon Mapper patches available (original CM pipeline not run). Validated model on its own training data to assess discrimination ability.
+
+| Metric | Positive Patches | Negative Patches |
+|--------|-----------------|-----------------|
+| Mean detection prob | 0.864 ± 0.156 | 0.822 ± 0.189 |
+| Detection rate (t=0.5) | 100% | 100% |
+| Detection rate (t=0.99) | 100% | 83% |
+
+- At t=0.99: 100% TPR, 83% FPR → precision 0.667
+- Mean probability is 4.2% higher for real plume patches than background
+- Correlation between true and predicted plume fraction: -0.25 (model predicts uniformly, not proportionally)
+- **Conclusion**: model detects a real but weak spectral signal; cannot yet reliably discriminate plume from background
+
 ### Path Forward
 More data (200+ patches) and longer training would likely push precision up while maintaining recall, driving F1 toward 0.3+. The signal transfer from MethaneSAT to Sentinel-2 is confirmed.
