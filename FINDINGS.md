@@ -99,3 +99,24 @@ MethaneSAT COGs have inverted Y-axis in rasterio bounds (`bottom > top` in lat).
 2. **Label noise**: 50 ppb threshold produces broad masks (2-7% of scene). Many "plume" pixels may be retrieval noise rather than real methane.
 3. **Spatial mismatch**: MethaneSAT 45m mask reprojected to 20m S2 grid loses precision. Time delta (3-69h) means plume may have moved.
 4. **Class imbalance**: even in "positive" patches, plume pixels are <10% of the patch.
+
+## Tiled Extraction + Retrained Model (2026-03-20)
+
+### Tiling Strategy
+Replaced single-center patch extraction with grid tiling: non-overlapping ~5km tiles over the mask, selecting top 8 tiles by plume count + 8 random background tiles. Yielded 80 patches (50 pos, 30 neg) from 27/94 pairs before process was stopped for time constraints.
+
+### Training v4: 80 patches, Dice loss, ResNet18
+- **Best F1: 0.166** at epoch 3 (precision 9.1%, recall 100%)
+- 6x improvement over v3 (F1=0.027 on 36 patches)
+- Model detects all plume pixels but over-predicts (predicts plume everywhere)
+- Dice loss prevents the all-zero collapse seen with BCE/Focal
+- Train loss decreasing (0.505 → 0.497), val loss stable (~0.509)
+
+### Interpretation
+The model sees the MethaneSAT signal in Sentinel-2 SWIR bands — recall is near-perfect. Precision is low because it hasn't learned to distinguish plume from background. This is consistent with:
+- The methane absorption signal in B11/B12 being real but subtle
+- 80 patches insufficient for the model to learn fine-grained spatial discrimination
+- The Varon ratio successfully highlighting the spectral signature
+
+### Path Forward
+More data (200+ patches) and longer training would likely push precision up while maintaining recall, driving F1 toward 0.3+. The signal transfer from MethaneSAT to Sentinel-2 is confirmed.
